@@ -58,6 +58,33 @@ def calculate_namespace_completion(container_info):
         namespace_completion[namespace] = completion_percentage
     return namespace_completion
 
+def calculate_container_completion(container_info, namespace):
+    """Calculate the completion percentage for each container in a namespace."""
+    container_completion = {}
+    containers = container_info.get(namespace, {})
+    for container_name, container in containers.items():
+        total_fields = 3  # description, criticality, dependencies
+        filled_fields = 0
+
+        # Check description
+        description = container.get('description', '').strip()
+        if description and description != 'Enter description here':
+            filled_fields += 1
+
+        # Check criticality
+        criticality = container.get('criticality', '').strip()
+        if criticality and criticality in ['low', 'medium', 'high']:
+            filled_fields += 1
+
+        # Check dependencies (considered filled if list is not empty)
+        dependencies = container.get('dependencies', [])
+        if dependencies:
+            filled_fields += 1
+
+        completion_percentage = int((filled_fields / total_fields) * 100)
+        container_completion[container_name] = completion_percentage
+    return container_completion
+
 def edit_container_info(container_info):
     """Allow the user to edit the container info."""
     while True:
@@ -65,16 +92,15 @@ def edit_container_info(container_info):
         namespace_completion = calculate_namespace_completion(container_info)
         namespaces = list(container_info.keys())
 
-        # Calculate maximum lengths for alignment
+        # Determine the maximum length of the namespace names for alignment
         max_ns_length = max(len(ns) for ns in namespaces) if namespaces else 0
-        max_idx_length = len(str(len(namespaces)))
 
         print("\nNamespaces:")
         for idx, ns in enumerate(namespaces, 1):
             completion = namespace_completion.get(ns, 0)
-            # Align the namespace names and percentages
-            print(f"{str(idx).rjust(max_idx_length)}. {ns.ljust(max_ns_length)}   ({str(completion).rjust(3)}% completed)")
-        print(f"{' ' * max_idx_length}  {len(namespaces)+1}. Go back to main menu")
+            # Adjust the formatting to align percentages
+            print(f"{idx}. {ns:<{max_ns_length}}    ({completion:>3}%) completed")
+        print(f"{len(namespaces)+1}. Go back to main menu")
 
         ns_choice = input("Select a namespace to edit (or enter number to go back): ")
         if not ns_choice.isdigit() or not (1 <= int(ns_choice) <= len(namespaces)+1):
@@ -88,13 +114,17 @@ def edit_container_info(container_info):
         containers = list(container_info[selected_ns].keys())
 
         while True:
+            # Calculate completion percentage for containers in the selected namespace
+            container_completion = calculate_container_completion(container_info, selected_ns)
+            # Determine the maximum length of the container names for alignment
             max_cont_length = max(len(cont) for cont in containers) if containers else 0
-            max_cont_idx_length = len(str(len(containers)))
 
             print(f"\nContainers in namespace '{selected_ns}':")
             for idx, container in enumerate(containers, 1):
-                print(f"{str(idx).rjust(max_cont_idx_length)}. {container}")
-            print(f"{' ' * max_cont_idx_length}  {len(containers)+1}. Go back to namespace selection")
+                completion = container_completion.get(container, 0)
+                # Adjust the formatting to align percentages
+                print(f"{idx}. {container:<{max_cont_length}}    ({completion:>3}%) completed")
+            print(f"{len(containers)+1}. Go back to namespace selection")
 
             cont_choice = input("Select a container to edit (or enter number to go back): ")
             if not cont_choice.isdigit() or not (1 <= int(cont_choice) <= len(containers)+1):
@@ -163,6 +193,8 @@ def edit_container_info(container_info):
             print("\nContainer information updated successfully.")
             # Save after each edit
             save_template_to_file(container_info)
+
+    print("\nReturning to container list...")
 
 def main_menu():
     """Display the main menu and handle user choices."""
