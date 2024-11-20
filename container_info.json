@@ -1,0 +1,13 @@
+{
+  "container1": {
+    "description": "Handles user authentication",
+    "dependencies": ["database"],
+    "criticality": "high"
+  },
+  "container2": {
+    "description": "Processes user data",
+    "dependencies": ["container1"],
+    "criticality": "medium"
+  }
+  // Add more containers as needed
+}
