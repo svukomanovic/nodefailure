@@ -10,18 +10,29 @@ def get_all_pods():
     return pods_data
 
 def extract_all_containers(pods_data):
-    """Extract all container names from the pods data."""
-    containers = set()
+    """Extract all container names and their namespaces from the pods data."""
+    containers = {}
     for pod in pods_data['items']:
+        namespace = pod['metadata']['namespace']
         for container in pod['spec']['containers']:
-            containers.add(container['name'])
+            container_name = container['name']
+            # Use namespace and container name as a combined key
+            key = f"{namespace}/{container_name}"
+            containers[key] = {
+                'namespace': namespace,
+                'container_name': container_name
+            }
     return containers
 
 def generate_container_info_template(containers):
-    """Generate a template JSON for container information."""
+    """Generate a template JSON for container information with namespaces."""
     container_info_template = {}
-    for container in containers:
-        container_info_template[container] = {
+    for key, value in containers.items():
+        namespace = value['namespace']
+        container_name = value['container_name']
+        if namespace not in container_info_template:
+            container_info_template[namespace] = {}
+        container_info_template[namespace][container_name] = {
             'description': 'Enter description here',
             'dependencies': [],  # List of dependent containers/services
             'criticality': 'low/medium/high'  # Enter one of 'low', 'medium', 'high'
@@ -48,7 +59,7 @@ def main():
         print("No pods found in the cluster.")
         return
 
-    # Extract all container names
+    # Extract all container names and namespaces
     containers = extract_all_containers(pods_data)
     if not containers:
         print("No containers found in the pods.")
