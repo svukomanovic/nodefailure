@@ -1,5 +1,6 @@
 import json
 import subprocess
+import os
 
 def get_node_list():
     """Retrieve the list of node names from the Kubernetes cluster."""
@@ -34,11 +35,17 @@ def get_pods_on_node(node_name):
     return json.loads(result.stdout)
 
 def extract_containers(pods_data):
-    """Extract container names from pods data."""
-    containers = set()
+    """Extract container names and namespaces from pods data."""
+    containers = []
     for pod in pods_data['items']:
+        namespace = pod['metadata']['namespace']
+        pod_name = pod['metadata']['name']
         for container in pod['spec']['containers']:
-            containers.add(container['name'])
+            containers.append({
+                'namespace': namespace,
+                'pod_name': pod_name,
+                'container_name': container['name']
+            })
     return containers
 
 def load_container_info():
@@ -50,28 +57,43 @@ def assess_impact(containers, container_info):
     """Assess the impact based on container criticality and dependencies."""
     reports = []
     for container in containers:
-        info = container_info.get(container, {
+        namespace = container['namespace']
+        container_name = container['container_name']
+        pod_name = container['pod_name']
+
+        info = container_info.get(namespace, {}).get(container_name, {
             'description': 'No information available',
             'dependencies': [],
             'criticality': 'unknown'
         })
-        impact = 'Unknown impact'
-        if info['criticality'] == 'high':
+
+        criticality = info.get('criticality', 'unknown')
+        if criticality == 'high':
             impact = 'High impact'
-        elif info['criticality'] == 'medium':
+        elif criticality == 'medium':
             impact = 'Moderate impact'
-        elif info['criticality'] == 'low':
+        elif criticality == 'low':
             impact = 'Low impact'
+        else:
+            impact = 'Unknown impact'
+
         reports.append({
-            'container_name': container,
-            'description': info['description'],
-            'dependencies': info['dependencies'],
-            'criticality': info['criticality'],
+            'namespace': namespace,
+            'pod_name': pod_name,
+            'container_name': container_name,
+            'description': info.get('description', 'No information available'),
+            'dependencies': info.get('dependencies', []),
+            'criticality': criticality,
             'impact': impact
         })
     return reports
 
 def main():
+    # Check if container_info.json exists
+    if not os.path.exists('container_info.json'):
+        print("container_info.json not found. Please run the template generation script and fill in the required information.")
+        return
+
     node_names = get_node_list()
     if not node_names:
         print("No nodes found in the cluster.")
@@ -90,6 +112,8 @@ def main():
     print("Impact Assessment Report:")
     print("=" * 40)
     for report in impact_reports:
+        print(f"Namespace: {report['namespace']}")
+        print(f"Pod: {report['pod_name']}")
         print(f"Container: {report['container_name']}")
         print(f"Description: {report['description']}")
         print(f"Dependencies: {', '.join(report['dependencies']) if report['dependencies'] else 'None'}")
