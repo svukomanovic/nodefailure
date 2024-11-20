@@ -44,13 +44,31 @@ def save_template_to_file(template, filename='container_info.json'):
         json.dump(template, f, indent=2)
     print(f"File saved as {filename}.")
 
+def calculate_namespace_completion(container_info):
+    """Calculate the completion percentage for each namespace based on filled descriptions."""
+    namespace_completion = {}
+    for namespace, containers in container_info.items():
+        total_containers = len(containers)
+        filled_containers = 0
+        for container in containers.values():
+            description = container.get('description', '')
+            if description and description.strip() != 'Enter description here':
+                filled_containers += 1
+        completion_percentage = int((filled_containers / total_containers) * 100) if total_containers > 0 else 0
+        namespace_completion[namespace] = completion_percentage
+    return namespace_completion
+
 def edit_container_info(container_info):
     """Allow the user to edit the container info."""
-    namespaces = list(container_info.keys())
     while True:
+        # Calculate completion percentage for each namespace
+        namespace_completion = calculate_namespace_completion(container_info)
+        namespaces = list(container_info.keys())
+
         print("\nNamespaces:")
         for idx, ns in enumerate(namespaces, 1):
-            print(f"{idx}. {ns}")
+            completion = namespace_completion.get(ns, 0)
+            print(f"{idx}. {ns} ({completion}% completed)")
         print(f"{len(namespaces)+1}. Go back to main menu")
 
         ns_choice = input("Select a namespace to edit (or enter number to go back): ")
