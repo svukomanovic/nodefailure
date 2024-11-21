@@ -207,7 +207,7 @@ def main_menu(impact_reports, selected_node):
         print("\nMain Menu:")
         print("1. Gather report statistics")
         print("2. Print out the report")
-        print("3. Quit and save the report file")
+        print("3. Quit")
         choice = input("Enter your choice (1/2/3): ").strip()
 
         if choice == '1':
@@ -215,9 +215,8 @@ def main_menu(impact_reports, selected_node):
         elif choice == '2':
             print_report(impact_reports, selected_node)
         elif choice == '3':
-            # Save the report file before quitting
-            print_report(impact_reports, selected_node)
-            print("Exiting. Report saved.")
+            # Exit without saving the report
+            print("Exiting.")
             break
         else:
             print("Invalid choice. Please select 1, 2, or 3.")
