@@ -1,0 +1,66 @@
+import json
+import subprocess
+import os
+from datetime import datetime
+
+# ... [Rest of the code remains the same] ...
+
+def print_report(impact_reports, selected_node):
+    """Print the impact report and save it to a text file with date and node name."""
+    # Get current date and time for the report (exclude seconds)
+    current_datetime = datetime.now().strftime("%Y%m%d_%H%M")
+    if selected_node:
+        sanitized_node_name = sanitize_filename(selected_node)
+        report_filename = f"{sanitized_node_name}_{current_datetime}.txt"
+        json_filename = f"{sanitized_node_name}_{current_datetime}_impact_reports.json"
+        report_title = f"Impact Assessment Report for Node: {selected_node}"
+    else:
+        report_filename = f"combined_nodes_{current_datetime}.txt"
+        json_filename = f"combined_nodes_{current_datetime}_impact_reports.json"
+        report_title = "Combined Impact Assessment Report for All Nodes"
+
+    # Prepare the report content
+    report_lines = []
+    report_lines.append(report_title)
+    report_lines.append("=" * 80)
+    report_lines.append(f"Date: {current_datetime}")
+    report_lines.append("=" * 80)
+
+    if selected_node:
+        # Generate detailed report for individual node
+        for report in impact_reports:
+            report_lines.append(f"Namespace: {report['namespace']}")
+            report_lines.append(f"Pod: {report['pod_name']}")
+            report_lines.append(f"Container: {report['container_name']}")
+            report_lines.append(f"Description: {report['description']}")
+            report_lines.append(f"Dependencies: {', '.join(report['dependencies']) if report['dependencies'] else 'None'}")
+            report_lines.append(f"Criticality: {report['criticality']}")
+            report_lines.append(f"Impact: {report['impact']}")
+            report_lines.append('-' * 80)
+
+        # Include the table report in the printed report
+        table_lines = generate_table_report(impact_reports)
+        report_text = '\n'.join(report_lines + ['\n'] + table_lines)
+    else:
+        # For combined report, generate tables per node
+        nodes = sorted(set(report['node_name'] for report in impact_reports))
+        for node in nodes:
+            node_reports = [report for report in impact_reports if report['node_name'] == node]
+            report_lines.append(f"\nNode: {node}")
+            report_lines.append('-' * 80)
+            table_lines = generate_table_per_node(node_reports)
+            report_lines.extend(table_lines)
+
+        report_text = '\n'.join(report_lines)
+
+    print(report_text)
+
+    # Save to a text file with date and node name in the filename
+    with open(report_filename, 'w') as f:
+        f.write(report_text)
+    print(f"\nReport saved to '{report_filename}'.")
+
+    # Save impact_reports data to a JSON file for visualization
+    with open(json_filename, 'w') as f:
+        json.dump(impact_reports, f, indent=4)
+    print(f"Impact reports data saved to '{json_filename}' for visualization.")
