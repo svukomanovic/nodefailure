@@ -1,6 +1,7 @@
 import json
 import subprocess
 import os
+from datetime import datetime
 
 def get_node_list():
     """Retrieve the list of node names from the Kubernetes cluster."""
@@ -97,10 +98,17 @@ def assess_impact(containers, container_info):
         })
     return reports, missing_containers
 
-def print_report(impact_reports):
-    """Print the impact report and save it to a text file."""
+def print_report(impact_reports, selected_node):
+    """Print the impact report and save it to a text file with date and node name."""
+    # Get current date and time for the report
+    current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_filename = f"impact_report_{selected_node}_{current_datetime}.txt"
+
     report_lines = []
-    report_lines.append("Impact Assessment Report:")
+    report_lines.append("Impact Assessment Report")
+    report_lines.append("=" * 60)
+    report_lines.append(f"Node: {selected_node}")
+    report_lines.append(f"Date: {current_datetime}")
     report_lines.append("=" * 60)
     for report in impact_reports:
         report_lines.append(f"Namespace: {report['namespace']}")
@@ -117,10 +125,10 @@ def print_report(impact_reports):
     report_text = '\n'.join(report_lines + ['\n'] + table_lines)
     print(report_text)
 
-    # Save to a text file
-    with open('impact_report.txt', 'w') as f:
+    # Save to a text file with date and node name in the filename
+    with open(report_filename, 'w') as f:
         f.write(report_text)
-    print("\nReport saved to 'impact_report.txt'.")
+    print(f"\nReport saved to '{report_filename}'.")
 
 def generate_table_report(impact_reports):
     """Generate a table report sorted by criticality from High to Low."""
@@ -188,7 +196,7 @@ def list_containers_with_details(impact_reports):
         print(f"{container_full_name:<{max_name_length}}  | {criticality:^11} | {dependencies}")
     print('=' * (max_name_length + 50))
 
-def main_menu(impact_reports):
+def main_menu(impact_reports, selected_node):
     """Display the main menu and handle user choices."""
     while True:
         print("\nMain Menu:")
@@ -200,10 +208,10 @@ def main_menu(impact_reports):
         if choice == '1':
             gather_statistics(impact_reports)
         elif choice == '2':
-            print_report(impact_reports)
+            print_report(impact_reports, selected_node)
         elif choice == '3':
             # Save the report file before quitting
-            print_report(impact_reports)
+            print_report(impact_reports, selected_node)
             print("Exiting. Report saved.")
             break
         else:
@@ -235,7 +243,7 @@ def main():
             print(f"Namespace: {namespace}, Container: {container_name}")
         print("Consider updating container_info.json with these containers.")
 
-    main_menu(impact_reports)
+    main_menu(impact_reports, selected_node)
 
 if __name__ == '__main__':
     main()
