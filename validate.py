@@ -127,16 +127,39 @@ def print_report(impact_reports, selected_node):
         report_filename = f"combined_nodes_{current_datetime}.txt"
         report_title = "Combined Impact Assessment Report for All Nodes"
 
-    # Generate the table report
-    table_lines = generate_table_report(impact_reports)
-
     # Prepare the report content
     report_lines = []
     report_lines.append(report_title)
     report_lines.append("=" * 80)
     report_lines.append(f"Date: {current_datetime}")
     report_lines.append("=" * 80)
-    report_text = '\n'.join(report_lines + ['\n'] + table_lines)
+
+    if selected_node:
+        # Generate detailed report for individual node
+        for report in impact_reports:
+            report_lines.append(f"Namespace: {report['namespace']}")
+            report_lines.append(f"Pod: {report['pod_name']}")
+            report_lines.append(f"Container: {report['container_name']}")
+            report_lines.append(f"Description: {report['description']}")
+            report_lines.append(f"Dependencies: {', '.join(report['dependencies']) if report['dependencies'] else 'None'}")
+            report_lines.append(f"Criticality: {report['criticality']}")
+            report_lines.append(f"Impact: {report['impact']}")
+            report_lines.append('-' * 80)
+
+        # Include the table report in the printed report
+        table_lines = generate_table_report(impact_reports)
+        report_text = '\n'.join(report_lines + ['\n'] + table_lines)
+    else:
+        # For combined report, generate tables per node
+        nodes = sorted(set(report['node_name'] for report in impact_reports))
+        for node in nodes:
+            node_reports = [report for report in impact_reports if report['node_name'] == node]
+            report_lines.append(f"\nNode: {node}")
+            report_lines.append('-' * 80)
+            table_lines = generate_table_per_node(node_reports)
+            report_lines.extend(table_lines)
+
+        report_text = '\n'.join(report_lines)
 
     print(report_text)
 
@@ -145,6 +168,27 @@ def print_report(impact_reports, selected_node):
         f.write(report_text)
     print(f"\nReport saved to '{report_filename}'.")
 
+def generate_table_per_node(node_reports):
+    """Generate a table report for a specific node."""
+    # Sort the reports by criticality
+    sorted_reports = sorted(node_reports, key=lambda x: x['criticality_sort'])
+
+    # Determine the maximum length for alignment
+    container_names = [f"{report['namespace']}/{report['container_name']}" for report in sorted_reports]
+    max_name_length = max(len(name) for name in container_names) if container_names else 0
+
+    table_lines = []
+    table_lines.append(f"{'Container Name':<{max_name_length}}  | Criticality | Dependencies")
+    table_lines.append('-' * (max_name_length + 50))
+    for report in sorted_reports:
+        container_full_name = f"{report['namespace']}/{report['container_name']}"
+        criticality = report['criticality'].capitalize()
+        dependencies = ', '.join(report['dependencies']) if report['dependencies'] else 'None'
+        line = f"{container_full_name:<{max_name_length}}  | {criticality:^11} | {dependencies}"
+        table_lines.append(line)
+    table_lines.append('=' * (max_name_length + 50))
+    return table_lines
+
 def generate_table_report(impact_reports):
     """Generate a table report sorted by criticality from High to Low."""
     # Sort the reports by criticality
@@ -152,25 +196,20 @@ def generate_table_report(impact_reports):
 
     # Determine the maximum length for alignment
     container_names = [f"{report['namespace']}/{report['container_name']}" for report in sorted_reports]
-    node_names = [report['node_name'] for report in sorted_reports]
     max_name_length = max(len(name) for name in container_names) if container_names else 0
-    max_node_length = max(len(name) for name in node_names) if node_names else 0
 
     table_lines = []
     table_lines.append("Containers Summary:")
-    table_lines.append("=" * (max_name_length + max_node_length + 65))
-    header = f"{'Container Name':<{max_name_length}}  | {'Node':<{max_node_length}} | Criticality | Dependencies"
-    table_lines.append(header)
-    table_lines.append('-' * (max_name_length + max_node_length + 65))
+    table_lines.append("=" * (max_name_length + 50))
+    table_lines.append(f"{'Container Name':<{max_name_length}}  | Criticality | Dependencies")
+    table_lines.append('-' * (max_name_length + 50))
     for report in sorted_reports:
         container_full_name = f"{report['namespace']}/{report['container_name']}"
-        node_name = report['node_name']
         criticality = report['criticality'].capitalize()
         dependencies = ', '.join(report['dependencies']) if report['dependencies'] else 'None'
-        line = f"{container_full_name:<{max_name_length}}  | {node_name:<{max_node_length}} | {criticality:^11} | {dependencies}"
+        line = f"{container_full_name:<{max_name_length}}  | {criticality:^11} | {dependencies}"
         table_lines.append(line)
-    table_lines.append('=' * (max_name_length + max_node_length + 65))
-
+    table_lines.append('=' * (max_name_length + 50))
     return table_lines
 
 def gather_statistics(impact_reports):
@@ -252,7 +291,7 @@ def main():
         print("Consider updating container_info.json with these containers.")
 
     if is_combined:
-        # For combined report, only generate the table view and save the report
+        # For combined report, generate tables per node and save the report
         print_report(impact_reports, None)
     else:
         main_menu(impact_reports, selected_node)
