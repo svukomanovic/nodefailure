@@ -12,17 +12,20 @@ def get_node_list():
     return node_names
 
 def select_node(node_names):
-    """Prompt the user to select a node from the list."""
+    """Prompt the user to select a node from the list, or choose to generate a combined report."""
     print("Available Nodes:")
     for idx, name in enumerate(node_names, start=1):
         print(f"{idx}. {name}")
+    print(f"{len(node_names) + 1}. Generate combined report for all nodes")
     while True:
         try:
             choice = int(input("Select a node by entering the corresponding number: "))
             if 1 <= choice <= len(node_names):
-                return node_names[choice - 1]
+                return node_names[choice - 1], False  # False indicates not a combined report
+            elif choice == len(node_names) + 1:
+                return None, True  # True indicates combined report
             else:
-                print(f"Please enter a number between 1 and {len(node_names)}.")
+                print(f"Please enter a number between 1 and {len(node_names) + 1}.")
         except ValueError:
             print("Invalid input. Please enter a number.")
 
@@ -35,17 +38,25 @@ def get_pods_on_node(node_name):
     result = subprocess.run(cmd, capture_output=True, text=True)
     return json.loads(result.stdout)
 
+def get_pods_all_nodes():
+    """Retrieve pods running on all nodes."""
+    cmd = ['kubectl', 'get', 'pods', '--all-namespaces', '-o', 'json']
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
 def extract_containers(pods_data):
     """Extract container names and namespaces from pods data."""
     containers = []
     for pod in pods_data['items']:
         namespace = pod['metadata']['namespace']
         pod_name = pod['metadata']['name']
+        node_name = pod['spec'].get('nodeName', 'Unknown')
         for container in pod['spec']['containers']:
             containers.append({
                 'namespace': namespace,
                 'pod_name': pod_name,
-                'container_name': container['name']
+                'container_name': container['name'],
+                'node_name': node_name
             })
     return containers
 
@@ -62,6 +73,7 @@ def assess_impact(containers, container_info):
         namespace = container['namespace']
         container_name = container['container_name']
         pod_name = container['pod_name']
+        node_name = container['node_name']
 
         info = container_info.get(namespace, {}).get(container_name)
         if info is None:
@@ -90,6 +102,7 @@ def assess_impact(containers, container_info):
             'namespace': namespace,
             'pod_name': pod_name,
             'container_name': container_name,
+            'node_name': node_name,
             'description': info.get('description', 'No information available'),
             'dependencies': info.get('dependencies', []),
             'criticality': criticality,
@@ -104,30 +117,27 @@ def sanitize_filename(filename):
 
 def print_report(impact_reports, selected_node):
     """Print the impact report and save it to a text file with date and node name."""
-    # Get current date and time for the report
-    current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sanitized_node_name = sanitize_filename(selected_node)
-    report_filename = f"{sanitized_node_name}_{current_datetime}.txt"
+    # Get current date and time for the report (exclude seconds)
+    current_datetime = datetime.now().strftime("%Y%m%d_%H%M")
+    if selected_node:
+        sanitized_node_name = sanitize_filename(selected_node)
+        report_filename = f"{sanitized_node_name}_{current_datetime}.txt"
+        report_title = f"Impact Assessment Report for Node: {selected_node}"
+    else:
+        report_filename = f"combined_nodes_{current_datetime}.txt"
+        report_title = "Combined Impact Assessment Report for All Nodes"
 
-    report_lines = []
-    report_lines.append("Impact Assessment Report")
-    report_lines.append("=" * 60)
-    report_lines.append(f"Node: {selected_node}")
-    report_lines.append(f"Date: {current_datetime}")
-    report_lines.append("=" * 60)
-    for report in impact_reports:
-        report_lines.append(f"Namespace: {report['namespace']}")
-        report_lines.append(f"Pod: {report['pod_name']}")
-        report_lines.append(f"Container: {report['container_name']}")
-        report_lines.append(f"Description: {report['description']}")
-        report_lines.append(f"Dependencies: {', '.join(report['dependencies']) if report['dependencies'] else 'None'}")
-        report_lines.append(f"Criticality: {report['criticality']}")
-        report_lines.append(f"Impact: {report['impact']}")
-        report_lines.append('-' * 60)
-
-    # Include the table report in the printed report
+    # Generate the table report
     table_lines = generate_table_report(impact_reports)
+
+    # Prepare the report content
+    report_lines = []
+    report_lines.append(report_title)
+    report_lines.append("=" * 80)
+    report_lines.append(f"Date: {current_datetime}")
+    report_lines.append("=" * 80)
     report_text = '\n'.join(report_lines + ['\n'] + table_lines)
+
     print(report_text)
 
     # Save to a text file with date and node name in the filename
@@ -142,19 +152,24 @@ def generate_table_report(impact_reports):
 
     # Determine the maximum length for alignment
     container_names = [f"{report['namespace']}/{report['container_name']}" for report in sorted_reports]
+    node_names = [report['node_name'] for report in sorted_reports]
     max_name_length = max(len(name) for name in container_names) if container_names else 0
+    max_node_length = max(len(name) for name in node_names) if node_names else 0
 
     table_lines = []
     table_lines.append("Containers Summary:")
-    table_lines.append("=" * (max_name_length + 50))
-    table_lines.append(f"{'Container Name':<{max_name_length}}  | Criticality | Dependencies")
-    table_lines.append('-' * (max_name_length + 50))
+    table_lines.append("=" * (max_name_length + max_node_length + 65))
+    header = f"{'Container Name':<{max_name_length}}  | {'Node':<{max_node_length}} | Criticality | Dependencies"
+    table_lines.append(header)
+    table_lines.append('-' * (max_name_length + max_node_length + 65))
     for report in sorted_reports:
         container_full_name = f"{report['namespace']}/{report['container_name']}"
+        node_name = report['node_name']
         criticality = report['criticality'].capitalize()
         dependencies = ', '.join(report['dependencies']) if report['dependencies'] else 'None'
-        table_lines.append(f"{container_full_name:<{max_name_length}}  | {criticality:^11} | {dependencies}")
-    table_lines.append('=' * (max_name_length + 50))
+        line = f"{container_full_name:<{max_name_length}}  | {node_name:<{max_node_length}} | {criticality:^11} | {dependencies}"
+        table_lines.append(line)
+    table_lines.append('=' * (max_name_length + max_node_length + 65))
 
     return table_lines
 
@@ -183,23 +198,9 @@ def count_critical_containers(impact_reports):
 
 def list_containers_with_details(impact_reports):
     """List all containers with their criticality and dependencies, sorted from High to Low."""
-    # Sort the reports by criticality
-    sorted_reports = sorted(impact_reports, key=lambda x: x['criticality_sort'])
-
-    # Determine the maximum length for alignment
-    container_names = [f"{report['namespace']}/{report['container_name']}" for report in sorted_reports]
-    max_name_length = max(len(name) for name in container_names) if container_names else 0
-
-    print("\nContainers Summary:")
-    print("=" * (max_name_length + 50))
-    print(f"{'Container Name':<{max_name_length}}  | Criticality | Dependencies")
-    print('-' * (max_name_length + 50))
-    for report in sorted_reports:
-        container_full_name = f"{report['namespace']}/{report['container_name']}"
-        criticality = report['criticality'].capitalize()
-        dependencies = ', '.join(report['dependencies']) if report['dependencies'] else 'None'
-        print(f"{container_full_name:<{max_name_length}}  | {criticality:^11} | {dependencies}")
-    print('=' * (max_name_length + 50))
+    table_lines = generate_table_report(impact_reports)
+    for line in table_lines:
+        print(line)
 
 def main_menu(impact_reports, selected_node):
     """Display the main menu and handle user choices."""
@@ -215,7 +216,6 @@ def main_menu(impact_reports, selected_node):
         elif choice == '2':
             print_report(impact_reports, selected_node)
         elif choice == '3':
-            # Exit without saving the report
             print("Exiting.")
             break
         else:
@@ -231,12 +231,16 @@ def main():
     if not node_names:
         print("No nodes found in the cluster.")
         return
-    selected_node = select_node(node_names)
-    print(f"\nSelected Node: {selected_node}\n")
-    pods_data = get_pods_on_node(selected_node)
+    selected_node, is_combined = select_node(node_names)
+    if is_combined:
+        print("\nGenerating combined report for all nodes...\n")
+        pods_data = get_pods_all_nodes()
+    else:
+        print(f"\nSelected Node: {selected_node}\n")
+        pods_data = get_pods_on_node(selected_node)
     containers = extract_containers(pods_data)
     if not containers:
-        print(f"No containers running on node {selected_node}.")
+        print("No containers found.")
         return
     container_info = load_container_info()
     impact_reports, missing_containers = assess_impact(containers, container_info)
@@ -247,7 +251,11 @@ def main():
             print(f"Namespace: {namespace}, Container: {container_name}")
         print("Consider updating container_info.json with these containers.")
 
-    main_menu(impact_reports, selected_node)
+    if is_combined:
+        # For combined report, only generate the table view and save the report
+        print_report(impact_reports, None)
+    else:
+        main_menu(impact_reports, selected_node)
 
 if __name__ == '__main__':
     main()
