@@ -98,11 +98,16 @@ def assess_impact(containers, container_info):
         })
     return reports, missing_containers
 
+def sanitize_filename(filename):
+    """Sanitize the filename by removing or replacing invalid characters."""
+    return "".join(c for c in filename if c.isalnum() or c in (' ', '_', '-')).rstrip()
+
 def print_report(impact_reports, selected_node):
     """Print the impact report and save it to a text file with date and node name."""
     # Get current date and time for the report
     current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_filename = f"impact_report_{selected_node}_{current_datetime}.txt"
+    sanitized_node_name = sanitize_filename(selected_node)
+    report_filename = f"{sanitized_node_name}_{current_datetime}.txt"
 
     report_lines = []
     report_lines.append("Impact Assessment Report")
