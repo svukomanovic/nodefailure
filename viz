@@ -1,7 +1,6 @@
 import json
 import os
 import glob
-import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -39,7 +38,7 @@ def visualize_dependencies(consolidated_data):
 
     # Keep track of positions for grouping
     positions = {}
-    node_offset = 0
+    labels = {}
 
     # Define node colors based on criticality
     criticality_colors = {
@@ -49,13 +48,20 @@ def visualize_dependencies(consolidated_data):
         'unknown': 'gray'
     }
 
-    node_colors = []
-    labels = {}
+    # Initialize variables for node grouping
+    node_positions = {}  # Map node names to their x positions
+    node_x_offsets = {}  # Offset for nodes within each node
 
-    # Iterate over nodes (Kubernetes nodes)
-    for idx, (node_name, reports) in enumerate(consolidated_data.items()):
-        # Calculate position offset for this node to group containers together
+    # First, determine positions for each Kubernetes node
+    for idx, node_name in enumerate(consolidated_data.keys()):
         node_pos_x = idx * 10  # Adjust the multiplier to control spacing between groups
+        node_positions[node_name] = node_pos_x
+        node_x_offsets[node_name] = 0  # Start offset for this node
+
+    # Now, add all nodes and edges
+    for node_name, reports in consolidated_data.items():
+        node_pos_x = node_positions[node_name]
+        node_offset = node_x_offsets[node_name]
         node_pos_y = 0
 
         for report in reports:
@@ -63,29 +69,38 @@ def visualize_dependencies(consolidated_data):
             criticality = report['criticality']
             dependencies = report['dependencies']
 
-            # Add the container as a node
-            G.add_node(container_full_name, criticality=criticality, node_name=node_name)
-
-            # Assign positions for grouping
-            positions[container_full_name] = (node_pos_x + node_offset, node_pos_y)
-            node_offset += 1  # Increment offset for next container in the same node
-
-            # Set node color
-            node_colors.append(criticality_colors.get(criticality, 'gray'))
-
-            # Set labels
-            labels[container_full_name] = container_full_name
+            # Add the container as a node if not already added
+            if not G.has_node(container_full_name):
+                G.add_node(container_full_name, criticality=criticality, node_name=node_name)
+                # Assign positions for grouping
+                positions[container_full_name] = (node_pos_x + node_offset, node_pos_y)
+                node_offset += 1  # Increment offset for next container in the same node
+                node_x_offsets[node_name] = node_offset  # Update offset
+                # Set labels
+                labels[container_full_name] = container_full_name
 
             # Add edges for dependencies
             for dep in dependencies:
+                # Add edge from container to dependency
+                G.add_edge(container_full_name, dep)
                 # Add dependency node if not already in the graph
                 if not G.has_node(dep):
                     G.add_node(dep, external=True)
                     # External dependencies are placed at a fixed position
                     positions[dep] = (node_pos_x + node_offset, node_pos_y - 5)
-                    node_colors.append('blue')
+                    node_offset += 1
+                    node_x_offsets[node_name] = node_offset
                     labels[dep] = dep
-                G.add_edge(container_full_name, dep)
+
+    # Now assign node colors after all nodes have been added
+    node_colors = []
+    for node in G.nodes(data=True):
+        attrs = node[1]
+        if attrs.get('external'):
+            node_colors.append('blue')  # External dependencies
+        else:
+            criticality = attrs.get('criticality', 'unknown')
+            node_colors.append(criticality_colors.get(criticality, 'gray'))
 
     # Draw the graph
     plt.figure(figsize=(14, 10))
