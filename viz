@@ -1,59 +1,45 @@
 import json
 import os
+import glob
 import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 
-def load_container_info():
-    """Load container information from container_info.json."""
-    if not os.path.exists('container_info.json'):
-        print("container_info.json not found. Please ensure the file exists in the current directory.")
+def select_consolidated_file():
+    """Prompt the user to select a consolidated JSON file."""
+    files = glob.glob('consolidated_*.json')
+    if not files:
+        print("No consolidated JSON files found. Please run the validate script first.")
         return None
-    with open('container_info.json') as f:
-        return json.load(f)
 
-def extract_containers(container_info):
-    """Extract containers and their dependencies from the container_info data."""
-    containers = []
-    for namespace, containers_dict in container_info.items():
-        for container_name, info in containers_dict.items():
-            containers.append({
-                'namespace': namespace,
-                'container_name': container_name,
-                'description': info.get('description', 'No description available'),
-                'dependencies': info.get('dependencies', []),
-                'criticality': info.get('criticality', 'unknown')
-            })
-    return containers
+    print("Available Consolidated JSON Files:")
+    for idx, filename in enumerate(files, start=1):
+        print(f"{idx}. {filename}")
 
-def visualize_dependencies(containers):
-    """Generate and visualize the dependency graph."""
-    # Convert to DataFrame
-    df = pd.DataFrame(containers)
+    while True:
+        try:
+            choice = int(input("Select a file by entering the corresponding number: "))
+            if 1 <= choice <= len(files):
+                return files[choice - 1]
+            else:
+                print(f"Please enter a number between 1 and {len(files)}.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
 
-    # Create a full name for each container
-    df['container_full_name'] = df['namespace'] + '/' + df['container_name']
+def load_consolidated_data(filename):
+    """Load consolidated data from the JSON file."""
+    with open(filename, 'r') as f:
+        data = json.load(f)
+    return data
 
-    # Initialize a directed graph
+def visualize_dependencies(consolidated_data):
+    """Generate and visualize the dependency graph with grouping per node."""
+    # Create a new graph
     G = nx.DiGraph()
 
-    # Add nodes for each container
-    for idx, row in df.iterrows():
-        G.add_node(row['container_full_name'], criticality=row['criticality'])
-
-    # Add edges based on dependencies
-    for idx, row in df.iterrows():
-        source = row['container_full_name']
-        dependencies = row['dependencies']
-        if dependencies:
-            for dep in dependencies:
-                # Check if the dependency is in the list of containers
-                if dep in df['container_full_name'].values:
-                    G.add_edge(source, dep)
-                else:
-                    # Add external dependencies as separate nodes
-                    G.add_node(dep, external=True)
-                    G.add_edge(source, dep)
+    # Keep track of positions for grouping
+    positions = {}
+    node_offset = 0
 
     # Define node colors based on criticality
     criticality_colors = {
@@ -63,52 +49,89 @@ def visualize_dependencies(containers):
         'unknown': 'gray'
     }
 
-    # Assign colors to nodes
     node_colors = []
-    for node in G.nodes(data=True):
-        attrs = node[1]
-        if attrs.get('external'):
-            node_colors.append('blue')  # External dependencies in blue
-        else:
-            criticality = attrs.get('criticality', 'unknown')
+    labels = {}
+
+    # Iterate over nodes (Kubernetes nodes)
+    for idx, (node_name, reports) in enumerate(consolidated_data.items()):
+        # Calculate position offset for this node to group containers together
+        node_pos_x = idx * 10  # Adjust the multiplier to control spacing between groups
+        node_pos_y = 0
+
+        for report in reports:
+            container_full_name = f"{report['namespace']}/{report['container_name']}"
+            criticality = report['criticality']
+            dependencies = report['dependencies']
+
+            # Add the container as a node
+            G.add_node(container_full_name, criticality=criticality, node_name=node_name)
+
+            # Assign positions for grouping
+            positions[container_full_name] = (node_pos_x + node_offset, node_pos_y)
+            node_offset += 1  # Increment offset for next container in the same node
+
+            # Set node color
             node_colors.append(criticality_colors.get(criticality, 'gray'))
 
-    # Set figure size
+            # Set labels
+            labels[container_full_name] = container_full_name
+
+            # Add edges for dependencies
+            for dep in dependencies:
+                # Add dependency node if not already in the graph
+                if not G.has_node(dep):
+                    G.add_node(dep, external=True)
+                    # External dependencies are placed at a fixed position
+                    positions[dep] = (node_pos_x + node_offset, node_pos_y - 5)
+                    node_colors.append('blue')
+                    labels[dep] = dep
+                G.add_edge(container_full_name, dep)
+
+    # Draw the graph
     plt.figure(figsize=(14, 10))
 
-    # Generate positions for nodes
-    pos = nx.spring_layout(G, k=0.5, seed=42)
-
     # Draw nodes
-    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=500)
+    nx.draw_networkx_nodes(G, positions, node_color=node_colors, node_size=500)
 
     # Draw edges
-    nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->')
+    nx.draw_networkx_edges(G, positions, arrows=True, arrowstyle='->')
 
     # Draw labels
-    nx.draw_networkx_labels(G, pos, font_size=8)
+    nx.draw_networkx_labels(G, positions, labels=labels, font_size=8)
+
+    # Add legend for criticality
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='red', edgecolor='black', label='High Criticality'),
+        Patch(facecolor='orange', edgecolor='black', label='Medium Criticality'),
+        Patch(facecolor='green', edgecolor='black', label='Low Criticality'),
+        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality'),
+        Patch(facecolor='blue', edgecolor='black', label='External Dependency')
+    ]
+    plt.legend(handles=legend_elements, loc='upper right')
 
     # Show plot
-    plt.title('Container Dependency Graph')
+    plt.title('Container Dependency Graph Grouped by Kubernetes Node')
     plt.axis('off')
+    plt.tight_layout()
     plt.show()
 
-    # Save the Matplotlib figure
-    output_filename = "container_dependency_graph.png"
+    # Save the figure
+    output_filename = "container_dependency_graph_grouped.png"
     plt.savefig(output_filename, dpi=300, bbox_inches='tight')
     print(f"Graph saved as '{output_filename}'")
 
 def main():
-    container_info = load_container_info()
-    if container_info is None:
+    # Select the consolidated JSON file
+    consolidated_file = select_consolidated_file()
+    if consolidated_file is None:
         return
 
-    containers = extract_containers(container_info)
-    if not containers:
-        print("No containers found in container_info.json.")
-        return
+    # Load consolidated data
+    consolidated_data = load_consolidated_data(consolidated_file)
 
-    visualize_dependencies(containers)
+    # Visualize dependencies
+    visualize_dependencies(consolidated_data)
 
 if __name__ == '__main__':
     main()
