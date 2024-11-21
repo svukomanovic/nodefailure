@@ -9,7 +9,7 @@ def get_node_list():
     result = subprocess.run(cmd, capture_output=True, text=True)
     nodes_data = json.loads(result.stdout)
     node_names = [node['metadata']['name'] for node in nodes_data['items']]
-    return node_names
+    return nodes_data['items'], node_names
 
 def select_node(node_names):
     """Prompt the user to select a node from the list, or choose to generate a combined report."""
@@ -266,7 +266,7 @@ def main():
         print("container_info.json not found. Please run the template generation script and fill in the required information.")
         return
 
-    node_names = get_node_list()
+    nodes_data, node_names = get_node_list()
     if not node_names:
         print("No nodes found in the cluster.")
         return
