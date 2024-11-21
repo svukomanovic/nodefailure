@@ -74,12 +74,16 @@ def assess_impact(containers, container_info):
         criticality = info.get('criticality', 'unknown')
         if criticality == 'high':
             impact = 'High impact'
+            criticality_sort = 1
         elif criticality == 'medium':
             impact = 'Moderate impact'
+            criticality_sort = 2
         elif criticality == 'low':
             impact = 'Low impact'
+            criticality_sort = 3
         else:
             impact = 'Unknown impact'
+            criticality_sort = 4
 
         reports.append({
             'namespace': namespace,
@@ -88,6 +92,7 @@ def assess_impact(containers, container_info):
             'description': info.get('description', 'No information available'),
             'dependencies': info.get('dependencies', []),
             'criticality': criticality,
+            'criticality_sort': criticality_sort,
             'impact': impact
         })
     return reports, missing_containers
@@ -107,7 +112,9 @@ def print_report(impact_reports):
         report_lines.append(f"Impact: {report['impact']}")
         report_lines.append('-' * 60)
 
-    report_text = '\n'.join(report_lines)
+    # Include the table report in the printed report
+    table_lines = generate_table_report(impact_reports)
+    report_text = '\n'.join(report_lines + ['\n'] + table_lines)
     print(report_text)
 
     # Save to a text file
@@ -115,23 +122,46 @@ def print_report(impact_reports):
         f.write(report_text)
     print("\nReport saved to 'impact_report.txt'.")
 
+def generate_table_report(impact_reports):
+    """Generate a table report sorted by criticality from High to Low."""
+    # Sort the reports by criticality
+    sorted_reports = sorted(impact_reports, key=lambda x: x['criticality_sort'])
+
+    # Determine the maximum length for alignment
+    container_names = [f"{report['namespace']}/{report['container_name']}" for report in sorted_reports]
+    max_name_length = max(len(name) for name in container_names) if container_names else 0
+
+    table_lines = []
+    table_lines.append("Containers Summary:")
+    table_lines.append("=" * (max_name_length + 50))
+    table_lines.append(f"{'Container Name':<{max_name_length}}  | Criticality | Dependencies")
+    table_lines.append('-' * (max_name_length + 50))
+    for report in sorted_reports:
+        container_full_name = f"{report['namespace']}/{report['container_name']}"
+        criticality = report['criticality'].capitalize()
+        dependencies = ', '.join(report['dependencies']) if report['dependencies'] else 'None'
+        table_lines.append(f"{container_full_name:<{max_name_length}}  | {criticality:^11} | {dependencies}")
+    table_lines.append('=' * (max_name_length + 50))
+
+    return table_lines
+
 def gather_statistics(impact_reports):
     """Gather and display report statistics."""
     while True:
         print("\nReport Statistics Menu:")
-        print("A) Count how many critical containers are there")
-        print("B) List all containers with criticality and dependencies")
-        print("C) Go back to main menu")
-        choice = input("Select an option (A/B/C): ").strip().upper()
+        print("1. Count how many critical containers are there")
+        print("2. List all containers with criticality and dependencies")
+        print("3. Go back to main menu")
+        choice = input("Select an option (1/2/3): ").strip()
 
-        if choice == 'A':
+        if choice == '1':
             count_critical_containers(impact_reports)
-        elif choice == 'B':
+        elif choice == '2':
             list_containers_with_details(impact_reports)
-        elif choice == 'C':
+        elif choice == '3':
             break
         else:
-            print("Invalid choice. Please select A, B, or C.")
+            print("Invalid choice. Please select 1, 2, or 3.")
 
 def count_critical_containers(impact_reports):
     """Count and display the number of critical containers."""
@@ -139,16 +169,19 @@ def count_critical_containers(impact_reports):
     print(f"\nTotal number of critical containers: {critical_count}")
 
 def list_containers_with_details(impact_reports):
-    """List all containers with their criticality and dependencies."""
+    """List all containers with their criticality and dependencies, sorted from High to Low."""
+    # Sort the reports by criticality
+    sorted_reports = sorted(impact_reports, key=lambda x: x['criticality_sort'])
+
     # Determine the maximum length for alignment
-    container_names = [f"{report['namespace']}/{report['container_name']}" for report in impact_reports]
+    container_names = [f"{report['namespace']}/{report['container_name']}" for report in sorted_reports]
     max_name_length = max(len(name) for name in container_names) if container_names else 0
 
     print("\nContainers Summary:")
     print("=" * (max_name_length + 50))
     print(f"{'Container Name':<{max_name_length}}  | Criticality | Dependencies")
     print('-' * (max_name_length + 50))
-    for report in impact_reports:
+    for report in sorted_reports:
         container_full_name = f"{report['namespace']}/{report['container_name']}"
         criticality = report['criticality'].capitalize()
         dependencies = ', '.join(report['dependencies']) if report['dependencies'] else 'None'
@@ -159,15 +192,15 @@ def main_menu(impact_reports):
     """Display the main menu and handle user choices."""
     while True:
         print("\nMain Menu:")
-        print("1. Print out the report")
-        print("2. Gather report statistics")
+        print("1. Gather report statistics")
+        print("2. Print out the report")
         print("3. Quit and save the report file")
         choice = input("Enter your choice (1/2/3): ").strip()
 
         if choice == '1':
-            print_report(impact_reports)
-        elif choice == '2':
             gather_statistics(impact_reports)
+        elif choice == '2':
+            print_report(impact_reports)
         elif choice == '3':
             # Save the report file before quitting
             print_report(impact_reports)
