@@ -1,45 +1,41 @@
+# Jupyter Notebook: Dependency Graph Visualization
+
+# Cell 1: Import Required Libraries
 import json
-import os
-import glob
 import networkx as nx
 import matplotlib.pyplot as plt
+%matplotlib inline
 
-def select_consolidated_file():
-    """Prompt the user to select a consolidated JSON file."""
-    files = glob.glob('consolidated_*.json')
-    if not files:
-        print("No consolidated JSON files found. Please run the validate script first.")
-        return None
+# Cell 2: Load the Graph Data
+# Make sure 'graph_data.json' is in the same directory as this notebook
+with open('graph_data.json', 'r') as f:
+    graph_data = json.load(f)
+print("Graph data loaded successfully.")
 
-    print("Available Consolidated JSON Files:")
-    for idx, filename in enumerate(files, start=1):
-        print(f"{idx}. {filename}")
+# Cell 3: List Available Nodes
+print("Available Nodes:")
+for node_name in graph_data.keys():
+    print(f"- {node_name}")
 
-    while True:
-        try:
-            choice = int(input("Select a file by entering the corresponding number: "))
-            if 1 <= choice <= len(files):
-                return files[choice - 1]
-            else:
-                print(f"Please enter a number between 1 and {len(files)}.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-
-def load_consolidated_data(filename):
-    """Load consolidated data from the JSON file."""
-    with open(filename, 'r') as f:
-        data = json.load(f)
-    return data
-
-def visualize_dependencies(consolidated_data):
-    """Generate and visualize the dependency graph with grouping per node."""
-    # Create a new graph
+# Cell 4: Define Function to Visualize Node Graph
+def visualize_node_graph(node_name):
+    if node_name not in graph_data:
+        print(f"Node '{node_name}' not found in graph data.")
+        return
+    
+    node_graph_data = graph_data[node_name]
+    
+    # Create a directed graph
     G = nx.DiGraph()
-
-    # Keep track of positions for grouping
-    positions = {}
-    labels = {}
-
+    
+    # Add nodes with attributes
+    for node in node_graph_data['nodes']:
+        G.add_node(node['id'], label=node['label'], criticality=node['criticality'], description=node['description'])
+    
+    # Add edges
+    for edge in node_graph_data['edges']:
+        G.add_edge(edge['from'], edge['to'])
+    
     # Define node colors based on criticality
     criticality_colors = {
         'high': 'red',
@@ -47,106 +43,119 @@ def visualize_dependencies(consolidated_data):
         'low': 'green',
         'unknown': 'gray'
     }
-
-    # Initialize variables for node grouping
-    node_positions = {}  # Map node names to their x positions
-    node_x_offsets = {}  # Offset for nodes within each node
-
-    # First, determine positions for each Kubernetes node
-    for idx, node_name in enumerate(consolidated_data.keys()):
-        node_pos_x = idx * 10  # Adjust the multiplier to control spacing between groups
-        node_positions[node_name] = node_pos_x
-        node_x_offsets[node_name] = 0  # Start offset for this node
-
-    # Now, add all nodes and edges
-    for node_name, reports in consolidated_data.items():
-        node_pos_x = node_positions[node_name]
-        node_offset = node_x_offsets[node_name]
-        node_pos_y = 0
-
-        for report in reports:
-            container_full_name = f"{report['namespace']}/{report['container_name']}"
-            criticality = report['criticality']
-            dependencies = report['dependencies']
-
-            # Add the container as a node if not already added
-            if not G.has_node(container_full_name):
-                G.add_node(container_full_name, criticality=criticality, node_name=node_name)
-                # Assign positions for grouping
-                positions[container_full_name] = (node_pos_x + node_offset, node_pos_y)
-                node_offset += 1  # Increment offset for next container in the same node
-                node_x_offsets[node_name] = node_offset  # Update offset
-                # Set labels
-                labels[container_full_name] = container_full_name
-
-            # Add edges for dependencies
-            for dep in dependencies:
-                # Add edge from container to dependency
-                G.add_edge(container_full_name, dep)
-                # Add dependency node if not already in the graph
-                if not G.has_node(dep):
-                    G.add_node(dep, external=True)
-                    # External dependencies are placed at a fixed position
-                    positions[dep] = (node_pos_x + node_offset, node_pos_y - 5)
-                    node_offset += 1
-                    node_x_offsets[node_name] = node_offset
-                    labels[dep] = dep
-
-    # Now assign node colors after all nodes have been added
+    
+    # Assign colors to nodes
     node_colors = []
-    for node in G.nodes(data=True):
-        attrs = node[1]
-        if attrs.get('external'):
-            node_colors.append('blue')  # External dependencies
-        else:
-            criticality = attrs.get('criticality', 'unknown')
-            node_colors.append(criticality_colors.get(criticality, 'gray'))
-
+    for node_id in G.nodes():
+        criticality = G.nodes[node_id].get('criticality', 'unknown')
+        color = criticality_colors.get(criticality, 'gray')
+        node_colors.append(color)
+    
+    # Generate positions for nodes
+    pos = nx.spring_layout(G, k=0.5, seed=42)
+    
     # Draw the graph
-    plt.figure(figsize=(14, 10))
-
-    # Draw nodes
-    nx.draw_networkx_nodes(G, positions, node_color=node_colors, node_size=500)
-
-    # Draw edges
-    nx.draw_networkx_edges(G, positions, arrows=True, arrowstyle='->')
-
-    # Draw labels
-    nx.draw_networkx_labels(G, positions, labels=labels, font_size=8)
-
-    # Add legend for criticality
+    plt.figure(figsize=(12, 8))
+    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=500)
+    nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->')
+    nx.draw_networkx_labels(G, pos, labels={node: G.nodes[node]['label'] for node in G.nodes()}, font_size=8)
+    
+    # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor='red', edgecolor='black', label='High Criticality'),
         Patch(facecolor='orange', edgecolor='black', label='Medium Criticality'),
         Patch(facecolor='green', edgecolor='black', label='Low Criticality'),
-        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality'),
-        Patch(facecolor='blue', edgecolor='black', label='External Dependency')
+        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality')
     ]
     plt.legend(handles=legend_elements, loc='upper right')
-
-    # Show plot
-    plt.title('Container Dependency Graph Grouped by Kubernetes Node')
+    
+    plt.title(f"Dependency Graph for Node: {node_name}")
     plt.axis('off')
-    plt.tight_layout()
     plt.show()
 
-    # Save the figure
-    output_filename = "container_dependency_graph_grouped.png"
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
-    print(f"Graph saved as '{output_filename}'")
-
-def main():
-    # Select the consolidated JSON file
-    consolidated_file = select_consolidated_file()
-    if consolidated_file is None:
+# Cell 5: Define Function to Display Node Details
+def display_node_details(node_name):
+    if node_name not in graph_data:
+        print(f"Node '{node_name}' not found in graph data.")
         return
+    
+    node_graph_data = graph_data[node_name]
+    print(f"\nDetails for Node: {node_name}")
+    print("=" * 60)
+    for node in node_graph_data['nodes']:
+        print(f"Container: {node['label']}")
+        print(f"Criticality: {node['criticality']}")
+        print(f"Description: {node['description']}")
+        print(f"Dependencies: {', '.join(node['dependencies']) if node['dependencies'] else 'None'}")
+        print('-' * 60)
 
-    # Load consolidated data
-    consolidated_data = load_consolidated_data(consolidated_file)
+# Cell 6: Define Function to Visualize Combined Graph
+def visualize_combined_graph():
+    # Create a combined graph
+    G = nx.DiGraph()
+    
+    # Add nodes and edges from all nodes
+    for node_name, node_graph_data in graph_data.items():
+        # Add nodes
+        for node in node_graph_data['nodes']:
+            G.add_node(node['id'], label=node['label'], criticality=node['criticality'], description=node['description'], node_name=node_name)
+        # Add edges
+        for edge in node_graph_data['edges']:
+            G.add_edge(edge['from'], edge['to'])
+    
+    # Define node colors based on criticality
+    criticality_colors = {
+        'high': 'red',
+        'medium': 'orange',
+        'low': 'green',
+        'unknown': 'gray'
+    }
+    
+    # Assign colors to nodes
+    node_colors = []
+    for node_id in G.nodes():
+        criticality = G.nodes[node_id].get('criticality', 'unknown')
+        color = criticality_colors.get(criticality, 'gray')
+        node_colors.append(color)
+    
+    # Generate positions for nodes
+    pos = nx.spring_layout(G, k=0.5, seed=42)
+    
+    # Draw the graph
+    plt.figure(figsize=(14, 10))
+    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=300)
+    nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->', arrowsize=10)
+    nx.draw_networkx_labels(G, pos, labels={node: G.nodes[node]['label'] for node in G.nodes()}, font_size=6)
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='red', edgecolor='black', label='High Criticality'),
+        Patch(facecolor='orange', edgecolor='black', label='Medium Criticality'),
+        Patch(facecolor='green', edgecolor='black', label='Low Criticality'),
+        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality')
+    ]
+    plt.legend(handles=legend_elements, loc='upper right')
+    
+    plt.title("Combined Dependency Graph")
+    plt.axis('off')
+    plt.show()
 
-    # Visualize dependencies
-    visualize_dependencies(consolidated_data)
+# Cell 7: User Interaction to Visualize a Specific Node
+# List nodes again for convenience
+print("\nAvailable Nodes:")
+for node_name in graph_data.keys():
+    print(f"- {node_name}")
 
-if __name__ == '__main__':
-    main()
+# Prompt user to enter a node name
+node_to_visualize = input("\nEnter the node name you want to visualize (or 'all' for combined graph): ").strip()
+
+if node_to_visualize.lower() == 'all':
+    # Visualize combined graph
+    visualize_combined_graph()
+else:
+    # Visualize the graph for the specified node
+    visualize_node_graph(node_to_visualize)
+    # Display node details
+    display_node_details(node_to_visualize)
