@@ -17,22 +17,21 @@ print("Available Nodes:")
 for node_name in graph_data.keys():
     print(f"- {node_name}")
 
-# Cell 4: Define Function to Visualize Node Graph (Updated)
 def visualize_node_graph(node_name):
     if node_name not in graph_data:
         print(f"Node '{node_name}' not found in graph data.")
         return
-    
+
     node_graph_data = graph_data[node_name]
-    
+
     # Create a directed graph
     G = nx.DiGraph()
-    
+
     # Keep track of containers that are on the node
     containers_on_node = set()
     for node in node_graph_data['nodes']:
         containers_on_node.add(node['id'])
-    
+
     # Add nodes with attributes from node_graph_data['nodes']
     for node in node_graph_data['nodes']:
         G.add_node(
@@ -42,12 +41,12 @@ def visualize_node_graph(node_name):
             description=node['description'],
             on_node=True  # Indicate that this container is on the node
         )
-    
+
     # Add edges and ensure that all nodes in edges are added to the graph with default attributes if missing
     for edge in node_graph_data['edges']:
         # Add edge
         G.add_edge(edge['from'], edge['to'])
-        
+
         # Ensure source node has attributes
         if edge['from'] not in G.nodes:
             G.add_node(
@@ -60,7 +59,7 @@ def visualize_node_graph(node_name):
         else:
             # If the node already exists, ensure 'on_node' attribute is set
             G.nodes[edge['from']].setdefault('on_node', edge['from'] in containers_on_node)
-        
+
         # Ensure target node has attributes
         if edge['to'] not in G.nodes:
             G.add_node(
@@ -73,7 +72,7 @@ def visualize_node_graph(node_name):
         else:
             # If the node already exists, ensure 'on_node' attribute is set
             G.nodes[edge['to']].setdefault('on_node', edge['to'] in containers_on_node)
-    
+
     # Define node colors based on criticality and whether they are on the node
     criticality_colors = {
         'high': 'red',
@@ -81,7 +80,7 @@ def visualize_node_graph(node_name):
         'low': 'green',
         'unknown': 'gray'
     }
-    
+
     # Assign colors to nodes
     node_colors = []
     for node_id in G.nodes():
@@ -92,18 +91,20 @@ def visualize_node_graph(node_name):
             criticality = node_data.get('criticality', 'unknown')
             color = criticality_colors.get(criticality, 'gray')
         node_colors.append(color)
-    
-    # Generate positions for nodes
-    pos = nx.spring_layout(G, k=0.5, seed=42)
-    
+
+    # Adjust spring_layout parameters
+    pos = nx.spring_layout(G, k=1.5, iterations=100, seed=42)  # Increased k and iterations
+
     # Draw the graph
     plt.figure(figsize=(12, 8))
     nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=500)
     nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->')
+
+    # Draw labels
     nx.draw_networkx_labels(
         G, pos, labels={node_id: G.nodes[node_id].get('label', node_id) for node_id in G.nodes()}, font_size=8
     )
-    
+
     # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
@@ -114,9 +115,10 @@ def visualize_node_graph(node_name):
         Patch(facecolor='blue', edgecolor='black', label='External Dependency')
     ]
     plt.legend(handles=legend_elements, loc='upper right')
-    
+
     plt.title(f"Dependency Graph for Node: {node_name}")
     plt.axis('off')
+    plt.tight_layout()
     plt.show()
 
 # Cell 5: Define Function to Display Node Details
