@@ -17,7 +17,7 @@ print("Available Nodes:")
 for node_name in graph_data.keys():
     print(f"- {node_name}")
 
-# Cell 4: Define Function to Visualize Node Graph
+# Cell 4: Define Function to Visualize Node Graph (Updated)
 def visualize_node_graph(node_name):
     if node_name not in graph_data:
         print(f"Node '{node_name}' not found in graph data.")
@@ -28,13 +28,22 @@ def visualize_node_graph(node_name):
     # Create a directed graph
     G = nx.DiGraph()
     
-    # Add nodes with attributes
+    # Add nodes with attributes from node_graph_data['nodes']
     for node in node_graph_data['nodes']:
         G.add_node(node['id'], label=node['label'], criticality=node['criticality'], description=node['description'])
     
-    # Add edges
+    # Add edges and ensure that all nodes in edges are added to the graph with default attributes if missing
     for edge in node_graph_data['edges']:
+        # Add edge
         G.add_edge(edge['from'], edge['to'])
+        
+        # Ensure source node has attributes
+        if edge['from'] not in G.nodes:
+            G.add_node(edge['from'], label=edge['from'], criticality='unknown', description='')
+        
+        # Ensure target node has attributes
+        if edge['to'] not in G.nodes:
+            G.add_node(edge['to'], label=edge['to'], criticality='unknown', description='')
     
     # Define node colors based on criticality
     criticality_colors = {
@@ -58,7 +67,9 @@ def visualize_node_graph(node_name):
     plt.figure(figsize=(12, 8))
     nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=500)
     nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->')
-    nx.draw_networkx_labels(G, pos, labels={node: G.nodes[node]['label'] for node in G.nodes()}, font_size=8)
+    nx.draw_networkx_labels(
+        G, pos, labels={node_id: G.nodes[node_id].get('label', node_id) for node_id in G.nodes()}, font_size=8
+    )
     
     # Add legend
     from matplotlib.patches import Patch
@@ -90,7 +101,7 @@ def display_node_details(node_name):
         print(f"Dependencies: {', '.join(node['dependencies']) if node['dependencies'] else 'None'}")
         print('-' * 60)
 
-# Cell 6: Define Function to Visualize Combined Graph
+# Cell 6: Define Function to Visualize Combined Graph (Unchanged)
 def visualize_combined_graph():
     # Create a combined graph
     G = nx.DiGraph()
@@ -103,6 +114,11 @@ def visualize_combined_graph():
         # Add edges
         for edge in node_graph_data['edges']:
             G.add_edge(edge['from'], edge['to'])
+            # Ensure nodes in edges have attributes
+            if edge['from'] not in G.nodes:
+                G.add_node(edge['from'], label=edge['from'], criticality='unknown', description='', node_name='Unknown')
+            if edge['to'] not in G.nodes:
+                G.add_node(edge['to'], label=edge['to'], criticality='unknown', description='', node_name='Unknown')
     
     # Define node colors based on criticality
     criticality_colors = {
@@ -126,7 +142,9 @@ def visualize_combined_graph():
     plt.figure(figsize=(14, 10))
     nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=300)
     nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->', arrowsize=10)
-    nx.draw_networkx_labels(G, pos, labels={node: G.nodes[node]['label'] for node in G.nodes()}, font_size=6)
+    nx.draw_networkx_labels(
+        G, pos, labels={node_id: G.nodes[node_id].get('label', node_id) for node_id in G.nodes()}, font_size=6
+    )
     
     # Add legend
     from matplotlib.patches import Patch
