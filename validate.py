@@ -291,7 +291,7 @@ def generate_consolidated_json(impact_reports):
     print(f"\nConsolidated data saved to '{filename}'.")
 
 def generate_grafana_dashboard(impact_reports):
-    """Generate a single Grafana dashboard JSON file with all nodes and containers."""
+    """Generate a single Grafana dashboard JSON file with embedded data."""
     # Ensure output directory exists
     output_dir = 'grafana_dashboards'
     if not os.path.exists(output_dir):
@@ -339,18 +339,16 @@ def generate_grafana_dashboard(impact_reports):
                 'unknown': 3
             }.get(criticality, 3)
             node_panel_data.append({
-                "field": f"{report['namespace']}/{report['container_name']}",
+                "container": f"{report['namespace']}/{report['container_name']}",
+                "criticality": criticality,
                 "value": color_value,
                 "description": report['description'],
                 "dependencies": report['dependencies']
             })
 
-        # Append data to the overall data
-        all_data.extend(node_panel_data)
-
-        # Create a panel for the node
+        # Create a panel for the node using the "Table" visualization
         panel = {
-            "type": "bargauge",
+            "type": "table",
             "title": f"Containers on Node {node}",
             "id": panel_id,
             "gridPos": {
@@ -360,33 +358,19 @@ def generate_grafana_dashboard(impact_reports):
                 "y": y_position
             },
             "options": {
-                "orientation": "horizontal",
-                "showUnfilled": False,
-                "reduceOptions": {
-                    "values": False,
-                    "calcs": ["lastNotNull"],
-                    "fields": ""
-                },
-                "displayMode": "lcd",
-                "fieldOptions": {
-                    "calcs": ["lastNotNull"],
-                    "defaults": {},
-                    "overrides": []
-                },
-                "valueMappings": [],
-                "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                        {"color": "green", "value": 0},
-                        {"color": "yellow", "value": 1},
-                        {"color": "red", "value": 2},
-                        {"color": "gray", "value": 3}
-                    ]
-                }
+                "showHeader": True,
+                "sortBy": [
+                    {
+                        "desc": True,
+                        "displayName": "Criticality"
+                    }
+                ]
             },
             "fieldConfig": {
                 "defaults": {
-                    "mappings": [],
+                    "color": {
+                        "mode": "thresholds"
+                    },
                     "thresholds": {
                         "mode": "absolute",
                         "steps": [
@@ -395,20 +379,19 @@ def generate_grafana_dashboard(impact_reports):
                             {"color": "red", "value": 2},
                             {"color": "gray", "value": 3}
                         ]
-                    }
+                    },
+                    "mappings": [],
                 },
                 "overrides": []
             },
-            "targets": [{
-                "refId": "A",
-                "type": "json",
-                "method": "GET",
-                "url": f"/data/container_data.json",
-                "headers": {},
-                "params": {
-                    "node": node
+            "targets": [
+                {
+                    "refId": "A",
+                    "datasource": "-- Grafana --",
+                    "type": "constant",
+                    "constant": node_panel_data  # Embedding data directly
                 }
-            }]
+            ]
         }
 
         dashboard['panels'].append(panel)
@@ -417,17 +400,11 @@ def generate_grafana_dashboard(impact_reports):
         panel_id += 1
         y_position += 9  # Adjust height accordingly
 
-    # Save the combined data to a single data file
-    data_filename = "container_data.json"
-    with open(os.path.join(output_dir, data_filename), 'w') as f:
-        json.dump(all_data, f, indent=4)
-
     # Save the dashboard JSON
-    dashboard_filename = "combined_dashboard.json"
+    dashboard_filename = "embedded_data_dashboard.json"
     with open(os.path.join(output_dir, dashboard_filename), 'w') as f:
-        json.dump(dashboard, f, indent=4)
-    print(f"\nCombined Grafana dashboard JSON saved to '{dashboard_filename}' in '{output_dir}' directory.")
-    print(f"Combined data file saved to '{data_filename}' in '{output_dir}' directory.")
+        json.dump({"dashboard": dashboard, "overwrite": True}, f, indent=4)
+    print(f"\nGrafana dashboard with embedded data saved to '{dashboard_filename}' in '{output_dir}' directory.")
 
 def main_menu(impact_reports, selected_node):
     """Display the main menu and handle user choices."""
