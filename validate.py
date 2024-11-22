@@ -290,8 +290,8 @@ def generate_consolidated_json(impact_reports):
         json.dump(consolidated_data, f, indent=4)
     print(f"\nConsolidated data saved to '{filename}'.")
 
-def generate_grafana_dashboards(impact_reports):
-    """Generate Grafana dashboard JSON files per node."""
+def generate_grafana_dashboard(impact_reports):
+    """Generate a single Grafana dashboard JSON file with all nodes and containers."""
     # Ensure output directory exists
     output_dir = 'grafana_dashboards'
     if not os.path.exists(output_dir):
@@ -305,33 +305,59 @@ def generate_grafana_dashboards(impact_reports):
         'unknown': 'gray'
     }
 
+    # Initialize the dashboard
+    dashboard = {
+        "annotations": {
+            "list": []
+        },
+        "panels": [],
+        "schemaVersion": 26,
+        "version": 0,
+        "title": "Container Criticality Dashboard"
+    }
+
+    # Prepare data for all containers
+    all_data = []
+
     # Organize reports by node
     nodes = sorted(set(report['node_name'] for report in impact_reports))
+
+    panel_id = 1  # Initialize panel ID
+    y_position = 0  # Initialize y position for panels
 
     for node in nodes:
         node_reports = [report for report in impact_reports if report['node_name'] == node]
 
-        # Create dashboard JSON structure
-        dashboard = {
-            "annotations": {
-                "list": []
-            },
-            "panels": [],
-            "schemaVersion": 26,
-            "version": 0,
-            "title": f"Container Criticality - Node: {node}"
-        }
+        # Data for the node's panel
+        node_panel_data = []
+        for report in node_reports:
+            criticality = report['criticality']
+            color_value = {
+                'low': 0,
+                'medium': 1,
+                'high': 2,
+                'unknown': 3
+            }.get(criticality, 3)
+            node_panel_data.append({
+                "field": f"{report['namespace']}/{report['container_name']}",
+                "value": color_value,
+                "description": report['description'],
+                "dependencies": report['dependencies']
+            })
+
+        # Append data to the overall data
+        all_data.extend(node_panel_data)
 
         # Create a panel for the node
         panel = {
             "type": "bargauge",
             "title": f"Containers on Node {node}",
-            "targets": [],
+            "id": panel_id,
             "gridPos": {
                 "h": 9,
                 "w": 24,
                 "x": 0,
-                "y": 0
+                "y": y_position
             },
             "options": {
                 "orientation": "horizontal",
@@ -351,9 +377,10 @@ def generate_grafana_dashboards(impact_reports):
                 "thresholds": {
                     "mode": "absolute",
                     "steps": [
-                        {"color": "green", "value": None},
+                        {"color": "green", "value": 0},
                         {"color": "yellow", "value": 1},
-                        {"color": "red", "value": 2}
+                        {"color": "red", "value": 2},
+                        {"color": "gray", "value": 3}
                     ]
                 }
             },
@@ -363,63 +390,44 @@ def generate_grafana_dashboards(impact_reports):
                     "thresholds": {
                         "mode": "absolute",
                         "steps": [
-                            {"color": "green", "value": None},
+                            {"color": "green", "value": 0},
                             {"color": "yellow", "value": 1},
-                            {"color": "red", "value": 2}
+                            {"color": "red", "value": 2},
+                            {"color": "gray", "value": 3}
                         ]
                     }
                 },
                 "overrides": []
-            }
+            },
+            "targets": [{
+                "refId": "A",
+                "type": "json",
+                "method": "GET",
+                "url": f"/data/container_data.json",
+                "headers": {},
+                "params": {
+                    "node": node
+                }
+            }]
         }
-
-        # Data for the panel
-        panel_data = []
-        for report in node_reports:
-            criticality = report['criticality']
-            color_value = {
-                'low': 0,
-                'medium': 1,
-                'high': 2,
-                'unknown': 3
-            }.get(criticality, 3)
-            panel_data.append({
-                "field": f"{report['namespace']}/{report['container_name']}",
-                "value": color_value,
-                "description": report['description'],
-                "dependencies": report['dependencies']
-            })
-
-        # Since Grafana panels usually fetch data from data sources, we'll simulate this by embedding data
-        # Note: This requires a data source that can handle embedded data, such as the JSON API plugin
-
-        # For demonstration, we'll save the data to a JSON file and reference it
-
-        data_filename = f"{sanitize_filename(node)}_data.json"
-        with open(os.path.join(output_dir, data_filename), 'w') as f:
-            json.dump(panel_data, f, indent=4)
-
-        # Configure the panel's data source (Assuming a JSON API data source)
-        panel['targets'] = [{
-            "refId": "A",
-            "type": "json",
-            "data": panel_data  # Directly embedding data; adjust according to your data source
-        }]
 
         dashboard['panels'].append(panel)
 
-        # Save the dashboard JSON
-        dashboard_filename = f"{sanitize_filename(node)}_dashboard.json"
-        with open(os.path.join(output_dir, dashboard_filename), 'w') as f:
-            json.dump(dashboard, f, indent=4)
-        print(f"Grafana dashboard JSON saved to '{dashboard_filename}'")
+        # Update panel ID and y position for next panel
+        panel_id += 1
+        y_position += 9  # Adjust height accordingly
 
-    # Handle containers without a node
-    unknown_node_reports = [report for report in impact_reports if report['node_name'] == 'Unknown']
-    if unknown_node_reports:
-        # Similar steps as above for unknown nodes
-        # ... (code omitted for brevity)
-        pass  # Implement similar logic for containers without a node
+    # Save the combined data to a single data file
+    data_filename = "container_data.json"
+    with open(os.path.join(output_dir, data_filename), 'w') as f:
+        json.dump(all_data, f, indent=4)
+
+    # Save the dashboard JSON
+    dashboard_filename = "combined_dashboard.json"
+    with open(os.path.join(output_dir, dashboard_filename), 'w') as f:
+        json.dump(dashboard, f, indent=4)
+    print(f"\nCombined Grafana dashboard JSON saved to '{dashboard_filename}' in '{output_dir}' directory.")
+    print(f"Combined data file saved to '{data_filename}' in '{output_dir}' directory.")
 
 def main_menu(impact_reports, selected_node):
     """Display the main menu and handle user choices."""
@@ -428,7 +436,7 @@ def main_menu(impact_reports, selected_node):
         print("1. Gather report statistics")
         print("2. Print out the report")
         print("3. Generate consolidated JSON file")
-        print("4. Generate Grafana dashboards")
+        print("4. Generate Grafana dashboard")
         print("5. Quit")
         choice = input("Enter your choice (1/2/3/4/5): ").strip()
 
@@ -439,7 +447,7 @@ def main_menu(impact_reports, selected_node):
         elif choice == '3':
             generate_consolidated_json(impact_reports)
         elif choice == '4':
-            generate_grafana_dashboards(impact_reports)
+            generate_grafana_dashboard(impact_reports)
         elif choice == '5':
             print("Exiting.")
             break
