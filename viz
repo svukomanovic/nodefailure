@@ -1,23 +1,3 @@
-# Jupyter Notebook: Dependency Graph Visualization
-
-# Cell 1: Import Required Libraries
-import json
-import networkx as nx
-import matplotlib.pyplot as plt
-%matplotlib inline
-
-# Cell 2: Load the Graph Data
-# Make sure 'graph_data.json' is in the same directory as this notebook
-with open('graph_data.json', 'r') as f:
-    graph_data = json.load(f)
-print("Graph data loaded successfully.")
-
-# Cell 3: List Available Nodes
-print("Available Nodes:")
-for node_name in graph_data.keys():
-    print(f"- {node_name}")
-
-# Cell 4: Define Function to Visualize Node Graph (Updated)
 def visualize_node_graph(node_name):
     if node_name not in graph_data:
         print(f"Node '{node_name}' not found in graph data.")
@@ -28,9 +8,20 @@ def visualize_node_graph(node_name):
     # Create a directed graph
     G = nx.DiGraph()
     
+    # Keep track of containers that are on the node
+    containers_on_node = set()
+    for node in node_graph_data['nodes']:
+        containers_on_node.add(node['id'])
+    
     # Add nodes with attributes from node_graph_data['nodes']
     for node in node_graph_data['nodes']:
-        G.add_node(node['id'], label=node['label'], criticality=node['criticality'], description=node['description'])
+        G.add_node(
+            node['id'],
+            label=node['label'],
+            criticality=node['criticality'],
+            description=node['description'],
+            on_node=True  # Indicate that this container is on the node
+        )
     
     # Add edges and ensure that all nodes in edges are added to the graph with default attributes if missing
     for edge in node_graph_data['edges']:
@@ -39,13 +30,31 @@ def visualize_node_graph(node_name):
         
         # Ensure source node has attributes
         if edge['from'] not in G.nodes:
-            G.add_node(edge['from'], label=edge['from'], criticality='unknown', description='')
+            G.add_node(
+                edge['from'],
+                label=edge['from'],
+                criticality='unknown',
+                description='',
+                on_node=False  # External dependency
+            )
+        else:
+            # If the node already exists, ensure 'on_node' attribute is set
+            G.nodes[edge['from']].setdefault('on_node', edge['from'] in containers_on_node)
         
         # Ensure target node has attributes
         if edge['to'] not in G.nodes:
-            G.add_node(edge['to'], label=edge['to'], criticality='unknown', description='')
+            G.add_node(
+                edge['to'],
+                label=edge['to'],
+                criticality='unknown',
+                description='',
+                on_node=False  # External dependency
+            )
+        else:
+            # If the node already exists, ensure 'on_node' attribute is set
+            G.nodes[edge['to']].setdefault('on_node', edge['to'] in containers_on_node)
     
-    # Define node colors based on criticality
+    # Define node colors based on criticality and whether they are on the node
     criticality_colors = {
         'high': 'red',
         'medium': 'orange',
@@ -56,8 +65,12 @@ def visualize_node_graph(node_name):
     # Assign colors to nodes
     node_colors = []
     for node_id in G.nodes():
-        criticality = G.nodes[node_id].get('criticality', 'unknown')
-        color = criticality_colors.get(criticality, 'gray')
+        node_data = G.nodes[node_id]
+        if not node_data.get('on_node', False):
+            color = 'blue'  # External dependency
+        else:
+            criticality = node_data.get('criticality', 'unknown')
+            color = criticality_colors.get(criticality, 'gray')
         node_colors.append(color)
     
     # Generate positions for nodes
@@ -77,103 +90,11 @@ def visualize_node_graph(node_name):
         Patch(facecolor='red', edgecolor='black', label='High Criticality'),
         Patch(facecolor='orange', edgecolor='black', label='Medium Criticality'),
         Patch(facecolor='green', edgecolor='black', label='Low Criticality'),
-        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality')
+        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality'),
+        Patch(facecolor='blue', edgecolor='black', label='External Dependency')
     ]
     plt.legend(handles=legend_elements, loc='upper right')
     
     plt.title(f"Dependency Graph for Node: {node_name}")
     plt.axis('off')
     plt.show()
-
-# Cell 5: Define Function to Display Node Details
-def display_node_details(node_name):
-    if node_name not in graph_data:
-        print(f"Node '{node_name}' not found in graph data.")
-        return
-    
-    node_graph_data = graph_data[node_name]
-    print(f"\nDetails for Node: {node_name}")
-    print("=" * 60)
-    for node in node_graph_data['nodes']:
-        print(f"Container: {node['label']}")
-        print(f"Criticality: {node['criticality']}")
-        print(f"Description: {node['description']}")
-        print(f"Dependencies: {', '.join(node['dependencies']) if node['dependencies'] else 'None'}")
-        print('-' * 60)
-
-# Cell 6: Define Function to Visualize Combined Graph (Unchanged)
-def visualize_combined_graph():
-    # Create a combined graph
-    G = nx.DiGraph()
-    
-    # Add nodes and edges from all nodes
-    for node_name, node_graph_data in graph_data.items():
-        # Add nodes
-        for node in node_graph_data['nodes']:
-            G.add_node(node['id'], label=node['label'], criticality=node['criticality'], description=node['description'], node_name=node_name)
-        # Add edges
-        for edge in node_graph_data['edges']:
-            G.add_edge(edge['from'], edge['to'])
-            # Ensure nodes in edges have attributes
-            if edge['from'] not in G.nodes:
-                G.add_node(edge['from'], label=edge['from'], criticality='unknown', description='', node_name='Unknown')
-            if edge['to'] not in G.nodes:
-                G.add_node(edge['to'], label=edge['to'], criticality='unknown', description='', node_name='Unknown')
-    
-    # Define node colors based on criticality
-    criticality_colors = {
-        'high': 'red',
-        'medium': 'orange',
-        'low': 'green',
-        'unknown': 'gray'
-    }
-    
-    # Assign colors to nodes
-    node_colors = []
-    for node_id in G.nodes():
-        criticality = G.nodes[node_id].get('criticality', 'unknown')
-        color = criticality_colors.get(criticality, 'gray')
-        node_colors.append(color)
-    
-    # Generate positions for nodes
-    pos = nx.spring_layout(G, k=0.5, seed=42)
-    
-    # Draw the graph
-    plt.figure(figsize=(14, 10))
-    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=300)
-    nx.draw_networkx_edges(G, pos, arrows=True, arrowstyle='->', arrowsize=10)
-    nx.draw_networkx_labels(
-        G, pos, labels={node_id: G.nodes[node_id].get('label', node_id) for node_id in G.nodes()}, font_size=6
-    )
-    
-    # Add legend
-    from matplotlib.patches import Patch
-    legend_elements = [
-        Patch(facecolor='red', edgecolor='black', label='High Criticality'),
-        Patch(facecolor='orange', edgecolor='black', label='Medium Criticality'),
-        Patch(facecolor='green', edgecolor='black', label='Low Criticality'),
-        Patch(facecolor='gray', edgecolor='black', label='Unknown Criticality')
-    ]
-    plt.legend(handles=legend_elements, loc='upper right')
-    
-    plt.title("Combined Dependency Graph")
-    plt.axis('off')
-    plt.show()
-
-# Cell 7: User Interaction to Visualize a Specific Node
-# List nodes again for convenience
-print("\nAvailable Nodes:")
-for node_name in graph_data.keys():
-    print(f"- {node_name}")
-
-# Prompt user to enter a node name
-node_to_visualize = input("\nEnter the node name you want to visualize (or 'all' for combined graph): ").strip()
-
-if node_to_visualize.lower() == 'all':
-    # Visualize combined graph
-    visualize_combined_graph()
-else:
-    # Visualize the graph for the specified node
-    visualize_node_graph(node_to_visualize)
-    # Display node details
-    display_node_details(node_to_visualize)
