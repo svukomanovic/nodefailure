@@ -1,0 +1,290 @@
+import json
+import networkx as nx
+import plotly.graph_objects as go
+
+  # Make sure 'graph_data.json' is in the same directory as this notebook
+with open('graph_data.json', 'r') as f:
+    graph_data = json.load(f)
+print("Graph data loaded successfully.")
+
+print("Available Nodes:")
+for node_name in graph_data.keys():
+    print(f"- {node_name}")
+
+def visualize_node_graph(node_name):
+    if node_name not in graph_data:
+        print(f"Node '{node_name}' not found in graph_data.")
+        return
+
+    node_graph_data = graph_data[node_name]
+
+    # Create a directed graph
+    G = nx.DiGraph()
+
+    # Keep track of containers that are on the node
+    containers_on_node = set()
+    for node in node_graph_data['nodes']:
+        containers_on_node.add(node['id'])
+
+    # Add nodes with attributes from node_graph_data['nodes']
+    for node in node_graph_data['nodes']:
+        G.add_node(
+            node['id'],
+            label=node['label'],
+            criticality=node['criticality'],
+            description=node['description'],
+            on_node=True  # Indicate that this container is on the node
+        )
+
+    # Add edges and ensure that all nodes in edges are added to the graph with default attributes if missing
+    for edge in node_graph_data['edges']:
+        # Add edge
+        G.add_edge(edge['from'], edge['to'])
+
+        # Ensure source node has attributes
+        if edge['from'] not in G.nodes:
+            G.add_node(
+                edge['from'],
+                label=edge['from'],
+                criticality='unknown',
+                description='',
+                on_node=False  # External dependency
+            )
+        else:
+            # Ensure 'on_node' attribute is set
+            G.nodes[edge['from']].setdefault('on_node', edge['from'] in containers_on_node)
+
+        # Ensure target node has attributes
+        if edge['to'] not in G.nodes:
+            G.add_node(
+                edge['to'],
+                label=edge['to'],
+                criticality='unknown',
+                description='',
+                on_node=False  # External dependency
+            )
+        else:
+            # Ensure 'on_node' attribute is set
+            G.nodes[edge['to']].setdefault('on_node', edge['to'] in containers_on_node)
+
+    # Define node colors based on criticality and whether they are on the node
+    criticality_colors = {
+        'high': 'red',
+        'medium': 'orange',
+        'low': 'green',
+        'unknown': 'gray',
+        'external': 'blue'
+    }
+
+    # Assign colors and texts to nodes
+    node_x = []
+    node_y = []
+    node_text = []
+    node_colors = []
+
+    # Get positions of nodes
+    pos = nx.spring_layout(G, k=1.5, iterations=200, seed=42)
+
+    for node_id in G.nodes():
+        x, y = pos[node_id]
+        node_x.append(x)
+        node_y.append(y)
+        node_data = G.nodes[node_id]
+        if not node_data.get('on_node', False):
+            color = criticality_colors['external']  # External dependency
+        else:
+            criticality = node_data.get('criticality', 'unknown')
+            color = criticality_colors.get(criticality, 'gray')
+        node_colors.append(color)
+        text = f"<b>{node_data.get('label', node_id)}</b><br>"
+        text += f"Criticality: {node_data.get('criticality', 'unknown')}<br>"
+        text += f"Description: {node_data.get('description', '')}"
+        node_text.append(text)
+
+    # Create Plotly node trace
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=node_text,
+        marker=dict(
+            color=node_colors,
+            size=15,
+            line_width=2
+        )
+    )
+
+    # Create Plotly edge trace
+    edge_x = []
+    edge_y = []
+
+    for edge in G.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=1, color='#888'),
+        hoverinfo='none',
+        mode='lines'
+    )
+
+    # Create the figure
+    fig = go.Figure(data=[edge_trace, node_trace],
+                    layout=go.Layout(
+                        title=f"Dependency Graph for Node: {node_name}",
+                        titlefont_size=16,
+                        showlegend=False,
+                        hovermode='closest',
+                        margin=dict(b=20, l=5, r=5, t=40),
+                        annotations=[
+                            dict(
+                                text="",
+                                showarrow=False,
+                                xref="paper",
+                                yref="paper"
+                            )
+                        ],
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                    )
+                   )
+
+    # Show the figure
+    fig.show()
+
+    def display_node_details(node_name):
+    if node_name not in graph_data:
+        print(f"Node '{node_name}' not found in graph_data.")
+        return
+
+    node_graph_data = graph_data[node_name]
+    print(f"\nDetails for Node: {node_name}")
+    print("=" * 60)
+    for node in node_graph_data['nodes']:
+        print(f"Container: {node['label']}")
+        print(f"Criticality: {node['criticality']}")
+        print(f"Description: {node['description']}")
+        print(f"Dependencies: {', '.join(node['dependencies']) if node['dependencies'] else 'None'}")
+        print('-' * 60)
+
+def visualize_combined_graph():
+    # Create a combined graph
+    G = nx.DiGraph()
+
+    # Add nodes and edges from all nodes
+    for node_name, node_graph_data in graph_data.items():
+        # Add nodes
+        for node in node_graph_data['nodes']:
+            G.add_node(node['id'], label=node['label'], criticality=node['criticality'], description=node['description'], node_name=node_name)
+        # Add edges
+        for edge in node_graph_data['edges']:
+            G.add_edge(edge['from'], edge['to'])
+            # Ensure nodes in edges have attributes
+            if edge['from'] not in G.nodes:
+                G.add_node(edge['from'], label=edge['from'], criticality='unknown', description='', node_name='Unknown')
+            if edge['to'] not in G.nodes:
+                G.add_node(edge['to'], label=edge['to'], criticality='unknown', description='', node_name='Unknown')
+
+    # Define node colors based on criticality
+    criticality_colors = {
+        'high': 'red',
+        'medium': 'orange',
+        'low': 'green',
+        'unknown': 'gray'
+    }
+
+    # Assign colors and texts to nodes
+    node_x = []
+    node_y = []
+    node_text = []
+    node_colors = []
+
+    # Get positions of nodes
+    pos = nx.spring_layout(G, k=1.5, iterations=200, seed=42)
+
+    for node_id in G.nodes():
+        x, y = pos[node_id]
+        node_x.append(x)
+        node_y.append(y)
+        node_data = G.nodes[node_id]
+        criticality = node_data.get('criticality', 'unknown')
+        color = criticality_colors.get(criticality, 'gray')
+        node_colors.append(color)
+        text = f"<b>{node_data.get('label', node_id)}</b><br>"
+        text += f"Criticality: {criticality}<br>"
+        text += f"Description: {node_data.get('description', '')}"
+        node_text.append(text)
+
+    # Create Plotly node trace
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=node_text,
+        marker=dict(
+            color=node_colors,
+            size=10,
+            line_width=2
+        )
+    )
+
+    # Create Plotly edge trace
+    edge_x = []
+    edge_y = []
+
+    for edge in G.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=0.5, color='#888'),
+        hoverinfo='none',
+        mode='lines'
+    )
+
+    # Create the figure
+    fig = go.Figure(data=[edge_trace, node_trace],
+                    layout=go.Layout(
+                        title="Combined Dependency Graph",
+                        titlefont_size=16,
+                        showlegend=False,
+                        hovermode='closest',
+                        margin=dict(b=20, l=5, r=5, t=40),
+                        annotations=[
+                            dict(
+                                text="",
+                                showarrow=False,
+                                xref="paper",
+                                yref="paper"
+                            )
+                        ],
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                    )
+                   )
+
+    # Show the figure
+    fig.show()
+
+# List nodes again for convenience
+print("\nAvailable Nodes:")
+for node_name in graph_data.keys():
+    print(f"- {node_name}")
+
+# Prompt user to enter a node name
+node_to_visualize = input("\nEnter the node name you want to visualize (or 'all' for combined graph): ").strip()
+
+if node_to_visualize.lower() == 'all':
+    # Visualize combined graph
+    visualize_combined_graph()
+else:
+    # Visualize the graph for the specified node
+    visualize_node_graph(node_to_visualize)
+    # Display node details
+    display_node_details(node_to_visualize)
